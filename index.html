@@ -249,7 +249,12 @@
                 }
             });
             Object.keys(attributes).forEach(key => {
-                el.setAttribute(key, attributes[key]);
+                // If it's an event handler (like onclick) skip setting it as an attribute
+                if (!key.startsWith('on')) {
+                    el.setAttribute(key, attributes[key]);
+                } else {
+                    // Direct property assignment is done in the calling function for robustness
+                }
             });
             return el;
         };
@@ -324,6 +329,10 @@
             );
             saveBtn.onclick = () => saveEntry(a.id, state.actCardValues[a.id]);
 
+            const deleteBtn = h('button', 'text-gray-400 hover:text-red-500', Icon('x', 'w-5 h-5'));
+            deleteBtn.onclick = () => delActivity(a.id);
+
+
             return h('div', 'bg-white rounded-lg shadow-lg p-4', [
               h('div', 'flex items-center justify-between mb-3', [
                 h('div', 'flex-1', [
@@ -338,7 +347,7 @@
                   ]),
                   daysLeft !== null && h('div', 'text-xs text-orange-600 font-medium mt-1', `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`),
                 ]),
-                h('button', 'text-gray-400 hover:text-red-500', Icon('x', 'w-5 h-5'), { onclick: () => delActivity(a.id) }),
+                deleteBtn,
               ]),
               h('div', 'flex items-center gap-3', [
                 h('div', 'flex-1', inputElement),
@@ -350,16 +359,31 @@
         function renderMainView() {
             const activityCards = state.activities.map(renderActCard);
 
+            // --- Main Buttons (Applying explicit onclick properties) ---
+            const addButton = h('button', 'bg-indigo-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-indigo-700', [Icon('plus', 'w-5 h-5'), 'Add']);
+            addButton.onclick = () => { state.view = 'add'; renderApp(); };
+
+            const graphsButton = h('button', 'bg-emerald-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-emerald-700', [Icon('trending-up', 'w-5 h-5'), 'Graphs']);
+            graphsButton.onclick = () => { state.view = 'graphs'; renderApp(); };
+
+            const historyButton = h('button', 'bg-purple-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-purple-700', [Icon('award', 'w-5 h-5'), 'History']);
+            historyButton.onclick = () => { state.view = 'history'; renderApp(); };
+
+            const settingsButton = h('button', 'bg-gray-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-gray-700', [Icon('settings', 'w-5 h-5'), 'Backup']);
+            settingsButton.onclick = () => { state.view = 'settings'; renderApp(); };
+            // --- End Main Buttons ---
+
+
             return h('div', 'space-y-4', [
                 h('div', 'bg-white rounded-lg shadow-lg p-6', [
                     h('h1', 'text-3xl font-bold text-gray-800 mb-2', 'Streak Tracker'),
                     h('p', 'text-gray-600', 'Build habits, break records, track streaks'),
                 ]),
                 h('div', 'grid grid-cols-2 gap-2', [
-                    h('button', 'bg-indigo-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-indigo-700', [Icon('plus', 'w-5 h-5'), 'Add'], { onclick: () => { state.view = 'add'; renderApp(); } }),
-                    h('button', 'bg-emerald-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-emerald-700', [Icon('trending-up', 'w-5 h-5'), 'Graphs'], { onclick: () => { state.view = 'graphs'; renderApp(); } }),
-                    h('button', 'bg-purple-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-purple-700', [Icon('award', 'w-5 h-5'), 'History'], { onclick: () => { state.view = 'history'; renderApp(); } }),
-                    h('button', 'bg-gray-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-gray-700', [Icon('settings', 'w-5 h-5'), 'Backup'], { onclick: () => { state.view = 'settings'; renderApp(); } }),
+                    addButton,
+                    graphsButton,
+                    historyButton,
+                    settingsButton,
                 ]),
                 
                 // CRITICAL FIX: Ensure the single child is wrapped in an array []
@@ -415,13 +439,12 @@
 
 
             const addBtn = h('button', `flex-1 rounded-lg p-3 font-semibold ${isNameValid ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-white'}`, 'Add', { 
-                onclick: () => isNameValid && addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType),
                 disabled: !isNameValid
             });
+            addBtn.onclick = () => isNameValid && addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType);
 
-            const cancelBtn = h('button', 'flex-1 bg-gray-200 text-gray-700 rounded-lg p-3 font-semibold hover:bg-gray-300', 'Cancel', { 
-                onclick: () => { state.view = 'main'; renderApp(); } 
-            });
+            const cancelBtn = h('button', 'flex-1 bg-gray-200 text-gray-700 rounded-lg p-3 font-semibold hover:bg-gray-300', 'Cancel');
+            cancelBtn.onclick = () => { state.view = 'main'; renderApp(); };
 
 
             return h('div', 'bg-white rounded-lg shadow-lg p-6', [
@@ -470,9 +493,12 @@
             // --- Component Structure ---
             const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
             
+            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
+            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
+
             container.appendChild(h('div', 'flex items-center justify-between mb-4', [
                 h('h2', 'text-2xl font-bold text-gray-800', 'Graphs'),
-                h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'), { onclick: () => { state.view = 'main'; renderApp(); } }),
+                closeBtn,
             ]));
 
             if (!state.selectedActivity) {
@@ -493,9 +519,13 @@
             } else {
                 // Graph Display View
                 const graphView = h('div');
+                
+                const backBtn = h('button', 'text-sm text-indigo-600', '← Back');
+                backBtn.onclick = () => { state.selectedActivity = null; renderApp('graphs'); };
+
                 graphView.appendChild(h('div', 'flex items-center justify-between mb-4', [
                     h('h3', 'text-xl font-semibold', state.selectedActivity.name),
-                    h('button', 'text-sm text-indigo-600', '← Back', { onclick: () => { state.selectedActivity = null; renderApp('graphs'); } }),
+                    backBtn,
                 ]));
 
                 // Period Selector
@@ -572,9 +602,12 @@
 
             const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
             
+            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
+            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
+            
             container.appendChild(h('div', 'flex items-center justify-between mb-4', [
                 h('h2', 'text-2xl font-bold text-gray-800', 'History'),
-                h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'), { onclick: () => { state.view = 'main'; renderApp(); } }),
+                closeBtn,
             ]));
 
             if (streaks.length === 0) {
@@ -615,33 +648,44 @@
 
         function renderSettingsView() {
             const fileInput = h('input', 'hidden', [], { type: 'file', accept: '.json', onchange: handleImport, id: 'import-file' });
+            fileInput.onchange = handleImport; // Ensure event listener is attached
+
+            const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
             
-            return h('div', 'bg-white rounded-lg shadow-lg p-6', [
-                h('div', 'flex items-center justify-between mb-4', [
-                    h('h2', 'text-2xl font-bold text-gray-800', 'Backup'),
-                    h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'), { onclick: () => { state.view = 'main'; renderApp(); } }),
+            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
+            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
+
+            const exportBtn = h('button', 'w-full bg-blue-600 text-white rounded-lg p-3 font-semibold hover:bg-blue-700', 'Copy to Clipboard');
+            exportBtn.onclick = exportData;
+
+
+            container.appendChild(h('div', 'flex items-center justify-between mb-4', [
+                h('h2', 'text-2xl font-bold text-gray-800', 'Backup'),
+                closeBtn,
+            ]));
+            
+            container.appendChild(h('div', 'space-y-4', [
+                h('div', 'p-4 bg-blue-50 border-2 border-blue-200 rounded-lg', [
+                    h('h3', 'font-semibold text-blue-900 mb-2', 'Export'),
+                    h('p', 'text-sm text-blue-800 mb-3', 'Copies backup to clipboard'),
+                    exportBtn,
                 ]),
-                h('div', 'space-y-4', [
-                    h('div', 'p-4 bg-blue-50 border-2 border-blue-200 rounded-lg', [
-                        h('h3', 'font-semibold text-blue-900 mb-2', 'Export'),
-                        h('p', 'text-sm text-blue-800 mb-3', 'Copies backup to clipboard'),
-                        h('button', 'w-full bg-blue-600 text-white rounded-lg p-3 font-semibold hover:bg-blue-700', 'Copy to Clipboard', { onclick: exportData }),
-                    ]),
-                    h('div', 'p-4 bg-green-50 border-2 border-green-200 rounded-lg', [
-                        h('h3', 'font-semibold text-green-900 mb-2', 'Import'),
-                        h('p', 'text-sm text-green-800 mb-3', 'Restore from backup file'),
-                        h('label', 'block w-full bg-green-600 text-white rounded-lg p-3 font-semibold hover:bg-green-700 text-center cursor-pointer', 'Choose File', { for: 'import-file' }),
-                        fileInput,
-                    ]),
-                    h('div', 'p-4 bg-amber-50 border-2 border-amber-200 rounded-lg', [
-                        h('h3', 'font-semibold text-amber-900 mb-2', '⚠️ Notes'),
-                        h('ul', 'text-sm text-amber-800 space-y-1 list-disc list-inside', [
-                            h('li', '', "Data doesn't sync between devices (it's local)"),
-                            h('li', '', 'Import overwrites existing data'),
-                        ]),
+                h('div', 'p-4 bg-green-50 border-2 border-green-200 rounded-lg', [
+                    h('h3', 'font-semibold text-green-900 mb-2', 'Import'),
+                    h('p', 'text-sm text-green-800 mb-3', 'Restore from backup file'),
+                    h('label', 'block w-full bg-green-600 text-white rounded-lg p-3 font-semibold hover:bg-green-700 text-center cursor-pointer', 'Choose File', { for: 'import-file' }),
+                    fileInput,
+                ]),
+                h('div', 'p-4 bg-amber-50 border-2 border-amber-200 rounded-lg', [
+                    h('h3', 'font-semibold text-amber-900 mb-2', '⚠️ Notes'),
+                    h('ul', 'text-sm text-amber-800 space-y-1 list-disc list-inside', [
+                        h('li', '', "Data doesn't sync between devices (it's local)"),
+                        h('li', '', 'Import overwrites existing data'),
                     ]),
                 ]),
-            ]);
+            ]));
+            
+            return container;
         }
 
         // --- Master Renderer ---
