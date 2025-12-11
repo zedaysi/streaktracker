@@ -540,4 +540,236 @@
                 selectorView.appendChild(h('p', 'text-gray-600 mb-3', 'Select activity:'));
 
                 if (cumulativeActivities.length === 0) {
-                     selectorView.appendChild(h('p', 'text-gray-500 text-center py-4', 'No cumulative
+                     selectorView.appendChild(h('p', 'text-gray-500 text-center py-4', 'No cumulative activities'));
+                } else {
+                    cumulativeActivities.forEach(a => {
+                        const btn = h('button', 'w-full p-4 text-left bg-gray-50 hover:bg-indigo-50 rounded-lg border-2 border-transparent hover:border-indigo-300', a.name);
+                        btn.onclick = () => { state.selectedActivity = a; renderApp('graphs'); };
+                        selectorView.appendChild(btn);
+                    });
+                }
+                container.appendChild(selectorView);
+            } else {
+                // Graph Display View
+                const graphView = h('div');
+                
+                const backBtn = h('button', 'text-sm text-indigo-600', '← Back');
+                backBtn.onclick = () => { state.selectedActivity = null; renderApp('graphs'); };
+
+                graphView.appendChild(h('div', 'flex items-center justify-between mb-4', [
+                    h('h3', 'text-xl font-semibold', state.selectedActivity.name),
+                    backBtn,
+                ]));
+
+                // Period Selector
+                const periodSelector = h('div', 'flex gap-2 mb-4');
+                ['week', 'month', 'year', 'all'].forEach(p => {
+                    const btn = h('button', `flex-1 py-2 rounded-lg font-medium ${state.graphPeriod === p ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'}`, 
+                        p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1)
+                    );
+                    btn.onclick = () => handlePeriodChange(p);
+                    periodSelector.appendChild(btn);
+                });
+                graphView.appendChild(periodSelector);
+                
+                // Chart Container
+                const chartContainer = h('div', 'chart-container', [
+                    h('canvas', '', [], { id: 'myChart' })
+                ]);
+                graphView.appendChild(chartContainer);
+
+                container.appendChild(graphView);
+
+                // --- Chart.js Initialization (must happen *after* elements are in the DOM) ---
+                setTimeout(() => {
+                    const chartData = getData(state.selectedActivity, state.graphPeriod);
+                    const ctx = document.getElementById('myChart');
+
+                    // Destroy existing chart instance before creating a new one
+                    if (chartInstance) {
+                        chartInstance.destroy();
+                    }
+
+                    if (ctx) {
+                        chartInstance = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: chartData.map(d => d.date),
+                                datasets: [{
+                                    label: state.selectedActivity.name,
+                                    data: chartData.map(d => d.value),
+                                    borderColor: '#4f46e5', // Tailwind indigo-600
+                                    borderWidth: 2,
+                                    tension: 0.1,
+                                    fill: false
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: { beginAtZero: true }
+                                },
+                                plugins: {
+                                    legend: { display: false }
+                                }
+                            }
+                        });
+                    }
+                }, 0); 
+            }
+
+            return container;
+        }
+
+        function renderHistoryView() {
+            const streaks = state.activities.flatMap(a => a.streaks.map(s => ({
+              name: a.name,
+              type: a.type,
+              len: s.entries.filter(e => e.value !== 'reset' && e.value !== 'missed').length,
+              end: s.end,
+              peak: a.type === 'cumulative' ? Math.max(-Infinity, ...s.entries.map(e => e.value).filter(v => typeof v === 'number')) : null,
+              latest: s.entries[s.entries.length - 1]?.value,
+              ongoing: s.end === a.streaks[a.streaks.length - 1].end && getStreak(a) > 0
+            }))).sort((x, y) => new Date(y.end) - new Date(x.end));
+
+            const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
+            
+            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
+            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
+            
+            container.appendChild(h('div', 'flex items-center justify-between mb-4', [
+                h('h2', 'text-2xl font-bold text-gray-800', 'History'),
+                closeBtn,
+            ]));
+
+            if (streaks.length === 0) {
+                 container.appendChild(h('p', 'text-gray-500 text-center py-4', 'No streaks yet!'));
+            } else {
+                const list = h('div', 'space-y-3');
+                streaks.forEach(s => {
+                    const dateDisplay = s.ongoing 
+                        ? h('span', 'text-emerald-600 font-medium', 'Ongoing') 
+                        : h('span', '', `Ended ${new Date(s.end).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`);
+
+                    const badge = s.ongoing 
+                        ? h('span', 'ml-2 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-semibold rounded', 'Active') 
+                        : null;
+
+                    const details = [
+                        h('span', 'font-medium', `${s.len} ${s.len === 1 ? 'day' : 'days'}`),
+                        s.type === 'cumulative' && s.peak !== null && s.peak !== -Infinity && h('span', '', `, peak = ${s.peak}`),
+                        s.type === 'cumulative' && s.ongoing && h('span', '', `, latest = ${s.latest}`),
+                    ].filter(Boolean);
+
+                    list.appendChild(h('div', 'p-4 bg-gray-50 rounded-lg border-2 border-gray-200', [
+                        h('div', 'flex items-start justify-between', [
+                            h('div', 'flex-1', [
+                                h('h3', 'font-semibold text-gray-800', s.name),
+                                h('p', 'text-sm text-gray-600 mt-1', details),
+                                h('p', 'text-xs text-gray-500 mt-1', dateDisplay),
+                            ]),
+                            badge
+                        ])
+                    ]));
+                });
+                container.appendChild(list);
+            }
+
+            return container;
+        }
+
+        function renderSettingsView() {
+            const fileInput = h('input', 'hidden', [], { type: 'file', accept: '.json', id: 'import-file' });
+            fileInput.onchange = handleImport; // Ensure event listener is attached
+
+            const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
+            
+            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
+            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
+
+            const exportBtn = h('button', 'w-full bg-blue-600 text-white rounded-lg p-3 font-semibold hover:bg-blue-700', 'Copy to Clipboard');
+            exportBtn.onclick = exportData;
+
+
+            container.appendChild(h('div', 'flex items-center justify-between mb-4', [
+                h('h2', 'text-2xl font-bold text-gray-800', 'Backup'),
+                closeBtn,
+            ]));
+            
+            container.appendChild(h('div', 'space-y-4', [
+                h('div', 'p-4 bg-blue-50 border-2 border-blue-200 rounded-lg', [
+                    h('h3', 'font-semibold text-blue-900 mb-2', 'Export'),
+                    h('p', 'text-sm text-blue-800 mb-3', 'Copies backup to clipboard'),
+                    exportBtn,
+                ]),
+                h('div', 'p-4 bg-green-50 border-2 border-green-200 rounded-lg', [
+                    h('h3', 'font-semibold text-green-900 mb-2', 'Import'),
+                    h('p', 'text-sm text-green-800 mb-3', 'Restore from backup file'),
+                    h('label', 'block w-full bg-green-600 text-white rounded-lg p-3 font-semibold hover:bg-green-700 text-center cursor-pointer', 'Choose File', { for: 'import-file' }),
+                    fileInput,
+                ]),
+                h('div', 'p-4 bg-amber-50 border-2 border-amber-200 rounded-lg', [
+                    h('h3', 'font-semibold text-amber-900 mb-2', '⚠️ Notes'),
+                    h('ul', 'text-sm text-amber-800 space-y-1 list-disc list-inside', [
+                        h('li', '', "Data doesn't sync between devices (it's local)"),
+                        h('li', '', 'Import overwrites existing data'),
+                    ]),
+                ]),
+            ]));
+            
+            return container;
+        }
+
+        // --- Master Renderer ---
+
+        function renderApp(renderType = 'full') {
+            const root = document.getElementById('root');
+            if (renderType === 'full') {
+                 root.innerHTML = ''; // Clear previous view completely
+            }
+           
+
+            let viewElement;
+            switch (state.view) {
+                case 'main':
+                    viewElement = renderMainView();
+                    break;
+                case 'add':
+                    viewElement = renderAddView();
+                    break;
+                case 'graphs':
+                    viewElement = renderGraphsView();
+                    break;
+                case 'history':
+                    viewElement = renderHistoryView();
+                    break;
+                case 'settings':
+                    viewElement = renderSettingsView();
+                    break;
+                default:
+                    viewElement = renderMainView();
+            }
+            
+            if (renderType === 'full') {
+                root.appendChild(viewElement);
+            }
+            
+            // Re-call Lucide to render all the newly added icon elements
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
+        }
+
+        // ====================================================================
+        // Application Initialization
+        // ====================================================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData(); // Load data from localStorage
+            renderApp(); // Render the initial view
+        });
+    </script>
+
+</body>
+</html>
