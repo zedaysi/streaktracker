@@ -15,6 +15,8 @@
         #import-file { display: none; }
         /* Style the chart container */
         .chart-container { position: relative; height: 300px; width: 100%; }
+        /* Ensure disabled buttons cannot be clicked */
+        button:disabled { pointer-events: none; }
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -273,8 +275,14 @@
             });
             
             Object.keys(attributes).forEach(key => {
+                // Special handling for boolean properties like 'disabled'
+                if (typeof attributes[key] === 'boolean') {
+                    if (attributes[key]) {
+                        el.setAttribute(key, key);
+                    }
+                } 
                 // If it's an event handler (like onclick) skip setting it as an attribute
-                if (!key.startsWith('on')) {
+                else if (!key.startsWith('on')) {
                     el.setAttribute(key, attributes[key]);
                 }
             });
@@ -415,11 +423,11 @@
         }
 
         function renderAddView() {
-            // Updated to use local state changes and then trigger renderApp('add')
-            const handleNameChange = (e) => { state.addName = e.target.value; renderApp('add'); };
-            const handleTypeChange = (e) => { state.addType = e.target.value; renderApp('add'); };
-            const handleFreqChange = (e) => { state.addFreq = e.target.value; renderApp('add'); };
-            const handleFreqTypeChange = (e) => { state.addFreqType = e.target.value; renderApp('add'); };
+            // Handlers trigger full re-render
+            const handleNameChange = (e) => { state.addName = e.target.value; renderApp(); }; 
+            const handleTypeChange = (e) => { state.addType = e.target.value; renderApp(); }; 
+            const handleFreqChange = (e) => { state.addFreq = e.target.value; renderApp(); }; 
+            const handleFreqTypeChange = (e) => { state.addFreqType = e.target.value; renderApp(); }; 
             
             const isNameValid = state.addName.trim().length > 0;
 
@@ -463,27 +471,25 @@
                 }
             }
 
-            // --- Add Button Logic (FINAL ATTEMPT FIX) ---
-            const addBtn = h('button', `flex-1 rounded-lg p-3 font-semibold ${isNameValid ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-white'}`, 'Add');
+            // --- Add Button Logic (REVISED to explicitly handle color and state) ---
+            const addBtn = h('button', 'flex-1 rounded-lg p-3 font-semibold', 'Add');
             
-            // 1. Attach the click handler UNCONDITIONALLY, but check validity inside the function
-            addBtn.onclick = () => {
-                // Check validity only upon click
-                if (state.addName.trim().length > 0) {
+            if (isNameValid) {
+                // Button is ACTIVE
+                addBtn.className = addBtn.className + ' bg-indigo-600 text-white hover:bg-indigo-700';
+                addBtn.disabled = false;
+                
+                // ATTACHMENT: Set the click handler directly
+                addBtn.onclick = () => {
                     console.log("Activity added (CLICK SUCCESSFUL): ", state.addName);
                     addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType);
-                } else {
-                    console.log("Click ignored: Name invalid.");
-                }
-            };
+                };
 
-            // 2. Set the disabled state (controls visuals and native click behavior)
-            if (!isNameValid) {
-                addBtn.disabled = true;
-                addBtn.setAttribute('disabled', 'disabled'); 
             } else {
-                addBtn.disabled = false;
-                addBtn.removeAttribute('disabled');
+                // Button is DISABLED (Gray/Grey)
+                addBtn.className = addBtn.className + ' bg-gray-400 text-white';
+                addBtn.disabled = true;
+                addBtn.onclick = null; // Ensure no click handler is attached when disabled
             }
             // --- End Add Button Logic ---
 
@@ -676,7 +682,7 @@
                         s.type === 'cumulative' && s.ongoing && h('span', '', `, latest = ${s.latest}`),
                     ].filter(Boolean);
 
-                    list.appendChild(h('div', 'p-4 bg-gray-50 rounded-lg border-2 border-gray-200', [
+                    list.appendChild(h('div', 'p-4 bg-gray-50 border-2 border-gray-200', [
                         h('div', 'flex items-start justify-between', [
                             h('div', 'flex-1', [
                                 h('h3', 'font-semibold text-gray-800', s.name),
