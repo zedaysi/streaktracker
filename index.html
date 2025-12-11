@@ -244,7 +244,7 @@
 
         // --- View Rendering Functions (Replacing React Components) ---
 
-        // Helper to create elements with Tailwind classes (FIXED for compatibility)
+        // Helper to create elements with Tailwind classes (Compatibility-safe version)
         const h = (tag, classes = '', children = [], attributes = {}) => {
             const el = document.createElement(tag);
             if (classes) el.className = classes;
@@ -462,26 +462,31 @@
                 }
             }
 
-            // --- Add Button Logic ---
+            // --- Add Button Fix: Ensure onclick is always set and enabled/disabled is handled ---
             const addBtn = h('button', `flex-1 rounded-lg p-3 font-semibold ${isNameValid ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-white'}`, 'Add');
             
-            if (!isNameValid) {
-                addBtn.disabled = true;
-                addBtn.setAttribute('disabled', 'disabled'); // For styling purposes
-            } else {
-                addBtn.disabled = false;
-                addBtn.removeAttribute('disabled');
-            }
-            
+            // 1. Set the functional onclick handler UNCONDITIONALLY
             addBtn.onclick = () => {
                 if (isNameValid) {
                     addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType);
                 }
             };
 
-            // --- Cancel Button Logic ---
+            // 2. Set the disabled state based on validation
+            if (!isNameValid) {
+                addBtn.disabled = true;
+                addBtn.setAttribute('disabled', 'disabled'); 
+            } else {
+                addBtn.disabled = false;
+                addBtn.removeAttribute('disabled');
+            }
+            // --- End Add Button Fix ---
+
+
+            // --- Cancel Button Logic remains the same ---
             const cancelBtn = h('button', 'flex-1 bg-gray-200 text-gray-700 rounded-lg p-3 font-semibold hover:bg-gray-300', 'Cancel');
             cancelBtn.onclick = () => { state.view = 'main'; renderApp(); };
+            // --- End Cancel Button Logic ---
 
 
             return h('div', 'bg-white rounded-lg shadow-lg p-6', [
