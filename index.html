@@ -237,7 +237,11 @@
         const h = (tag, classes = '', children = [], attributes = {}) => {
             const el = document.createElement(tag);
             if (classes) el.className = classes;
-            children.flat().forEach(child => {
+            
+            // FIX: Ensure children is treated as an array before flat() is called
+            const childrenArray = Array.isArray(children) ? children : (children ? [children] : []);
+
+            childrenArray.flat().forEach(child => {
                 if (typeof child === 'string' || typeof child === 'number') {
                     el.appendChild(document.createTextNode(child));
                 } else if (child instanceof Node) {
@@ -357,8 +361,10 @@
                     h('button', 'bg-purple-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-purple-700', [Icon('award', 'w-5 h-5'), 'History'], { onclick: () => { state.view = 'history'; renderApp(); } }),
                     h('button', 'bg-gray-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-gray-700', [Icon('settings', 'w-5 h-5'), 'Backup'], { onclick: () => { state.view = 'settings'; renderApp(); } }),
                 ]),
+                
+                // CRITICAL FIX: Ensure the single child is wrapped in an array []
                 state.activities.length === 0 ? 
-                    h('div', 'bg-white rounded-lg shadow-lg p-8 text-center', h('p', 'text-gray-500', 'No activities yet!')) :
+                    h('div', 'bg-white rounded-lg shadow-lg p-8 text-center', [h('p', 'text-gray-500', 'No activities yet!')]) :
                     h('div', 'space-y-3', activityCards)
             ]);
         }
@@ -521,30 +527,32 @@
                         chartInstance.destroy();
                     }
 
-                    chartInstance = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: chartData.map(d => d.date),
-                            datasets: [{
-                                label: state.selectedActivity.name,
-                                data: chartData.map(d => d.value),
-                                borderColor: '#4f46e5', // Tailwind indigo-600
-                                borderWidth: 2,
-                                tension: 0.1,
-                                fill: false
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                y: { beginAtZero: true }
+                    if (ctx) {
+                        chartInstance = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: chartData.map(d => d.date),
+                                datasets: [{
+                                    label: state.selectedActivity.name,
+                                    data: chartData.map(d => d.value),
+                                    borderColor: '#4f46e5', // Tailwind indigo-600
+                                    borderWidth: 2,
+                                    tension: 0.1,
+                                    fill: false
+                                }]
                             },
-                            plugins: {
-                                legend: { display: false }
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: { beginAtZero: true }
+                                },
+                                plugins: {
+                                    legend: { display: false }
+                                }
                             }
-                        }
-                    });
+                        });
+                    }
                 }, 0); 
             }
 
@@ -557,7 +565,7 @@
               type: a.type,
               len: s.entries.filter(e => e.value !== 'reset' && e.value !== 'missed').length,
               end: s.end,
-              peak: a.type === 'cumulative' ? Math.max(...s.entries.map(e => e.value)) : null,
+              peak: a.type === 'cumulative' ? Math.max(-Infinity, ...s.entries.map(e => e.value).filter(v => typeof v === 'number')) : null,
               latest: s.entries[s.entries.length - 1]?.value,
               ongoing: s.end === a.streaks[a.streaks.length - 1].end && getStreak(a) > 0
             }))).sort((x, y) => new Date(y.end) - new Date(x.end));
@@ -584,7 +592,7 @@
 
                     const details = [
                         h('span', 'font-medium', `${s.len} ${s.len === 1 ? 'day' : 'days'}`),
-                        s.type === 'cumulative' && s.peak !== null && h('span', '', `, peak = ${s.peak}`),
+                        s.type === 'cumulative' && s.peak !== null && s.peak !== -Infinity && h('span', '', `, peak = ${s.peak}`),
                         s.type === 'cumulative' && s.ongoing && h('span', '', `, latest = ${s.latest}`),
                     ].filter(Boolean);
 
