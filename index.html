@@ -137,6 +137,7 @@
         };
 
         const addActivity = (name, type, freq, freqType) => {
+            console.log("Activity added: ", name); // DEBUG LOG
             const act = {
                 id: Date.now().toString(),
                 name,
@@ -462,17 +463,21 @@
                 }
             }
 
-            // --- Add Button Fix: Ensure onclick is always set and enabled/disabled is handled ---
+            // --- Add Button Logic (FINAL ATTEMPT FIX) ---
             const addBtn = h('button', `flex-1 rounded-lg p-3 font-semibold ${isNameValid ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-white'}`, 'Add');
             
-            // 1. Set the functional onclick handler UNCONDITIONALLY
+            // 1. Attach the click handler UNCONDITIONALLY, but check validity inside the function
             addBtn.onclick = () => {
-                if (isNameValid) {
+                // Check validity only upon click
+                if (state.addName.trim().length > 0) {
+                    console.log("Activity added (CLICK SUCCESSFUL): ", state.addName);
                     addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType);
+                } else {
+                    console.log("Click ignored: Name invalid.");
                 }
             };
 
-            // 2. Set the disabled state based on validation
+            // 2. Set the disabled state (controls visuals and native click behavior)
             if (!isNameValid) {
                 addBtn.disabled = true;
                 addBtn.setAttribute('disabled', 'disabled'); 
@@ -480,10 +485,10 @@
                 addBtn.disabled = false;
                 addBtn.removeAttribute('disabled');
             }
-            // --- End Add Button Fix ---
+            // --- End Add Button Logic ---
 
 
-            // --- Cancel Button Logic remains the same ---
+            // --- Cancel Button Logic ---
             const cancelBtn = h('button', 'flex-1 bg-gray-200 text-gray-700 rounded-lg p-3 font-semibold hover:bg-gray-300', 'Cancel');
             cancelBtn.onclick = () => { state.view = 'main'; renderApp(); };
             // --- End Cancel Button Logic ---
