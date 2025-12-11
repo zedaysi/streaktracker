@@ -136,7 +136,6 @@
             saveData(updated);
         };
 
-        // --- FIXED addActivity function ---
         const addActivity = (name, type, freq, freqType) => {
             const act = {
                 id: Date.now().toString(),
@@ -161,7 +160,6 @@
             // 3. Save the data (which automatically triggers renderApp())
             saveData(newActivities);
         };
-        // --- END FIXED addActivity function ---
 
 
         const delActivity = (id) => saveData(state.activities.filter(a => a.id !== id));
@@ -246,27 +244,37 @@
 
         // --- View Rendering Functions (Replacing React Components) ---
 
-        // Helper to create elements with Tailwind classes
+        // Helper to create elements with Tailwind classes (FIXED for compatibility)
         const h = (tag, classes = '', children = [], attributes = {}) => {
             const el = document.createElement(tag);
             if (classes) el.className = classes;
             
-            // FIX: Ensure children is treated as an array before flat() is called
-            const childrenArray = Array.isArray(children) ? children : (children ? [children] : []);
+            // Ensure children is treated as an array, handling single element or null/undefined gracefully.
+            const childrenInput = Array.isArray(children) ? children : (children != null ? [children] : []);
 
-            childrenArray.flat().forEach(child => {
-                if (typeof child === 'string' || typeof child === 'number') {
-                    el.appendChild(document.createTextNode(child));
-                } else if (child instanceof Node) {
-                    el.appendChild(child);
+            const append = (item) => {
+                if (typeof item === 'string' || typeof item === 'number') {
+                    el.appendChild(document.createTextNode(item));
+                } else if (item instanceof Node) {
+                    el.appendChild(item);
+                }
+            };
+            
+            // Safe, manual single-level iteration (replaces .flat() for compatibility)
+            childrenInput.forEach(child => {
+                if (child == null || child === false) return; // Skip falsy values
+                
+                if (Array.isArray(child)) {
+                    child.forEach(nestedChild => append(nestedChild));
+                } else {
+                    append(child);
                 }
             });
+            
             Object.keys(attributes).forEach(key => {
                 // If it's an event handler (like onclick) skip setting it as an attribute
                 if (!key.startsWith('on')) {
                     el.setAttribute(key, attributes[key]);
-                } else {
-                    // Direct property assignment is done in the calling function for robustness
                 }
             });
             return el;
@@ -399,7 +407,6 @@
                     settingsButton,
                 ]),
                 
-                // CRITICAL FIX: Ensure the single child is wrapped in an array []
                 state.activities.length === 0 ? 
                     h('div', 'bg-white rounded-lg shadow-lg p-8 text-center', [h('p', 'text-gray-500', 'No activities yet!')]) :
                     h('div', 'space-y-3', activityCards)
@@ -455,7 +462,7 @@
                 }
             }
 
-            // --- Add Button Fix: Explicitly setting click handler and disabled state ---
+            // --- Add Button Logic ---
             const addBtn = h('button', `flex-1 rounded-lg p-3 font-semibold ${isNameValid ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-400 text-white'}`, 'Add');
             
             if (!isNameValid) {
@@ -471,13 +478,10 @@
                     addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType);
                 }
             };
-            // --- End Add Button Fix ---
 
-
-            // --- Cancel Button Fix: Explicitly setting click handler ---
+            // --- Cancel Button Logic ---
             const cancelBtn = h('button', 'flex-1 bg-gray-200 text-gray-700 rounded-lg p-3 font-semibold hover:bg-gray-300', 'Cancel');
             cancelBtn.onclick = () => { state.view = 'main'; renderApp(); };
-            // --- End Cancel Button Fix ---
 
 
             return h('div', 'bg-white rounded-lg shadow-lg p-6', [
@@ -751,7 +755,7 @@
                     viewElement = renderMainView();
             }
             
-            if (renderType === 'full') {
+            if (renderType === 'full' && viewElement) {
                 root.appendChild(viewElement);
             }
             
@@ -762,12 +766,24 @@
         }
 
         // ====================================================================
-        // Application Initialization
+        // Application Initialization (ADDED global try/catch for robustness)
         // ====================================================================
 
         document.addEventListener('DOMContentLoaded', () => {
-            loadData(); // Load data from localStorage
-            renderApp(); // Render the initial view
+            try {
+                loadData(); // Load data from localStorage
+                renderApp(); // Render the initial view
+            } catch (error) {
+                const root = document.getElementById('root');
+                root.innerHTML = `
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                        <strong class="font-bold">App Initialization Error:</strong>
+                        <span class="block sm:inline">The application failed to start due to a rendering error. Check console for details.</span>
+                        <p class="mt-2 text-sm">Error: ${error.message}</p>
+                    </div>
+                `;
+                console.error("Fatal Application Error during DOMContentLoaded:", error);
+            }
         });
     </script>
 
