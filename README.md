@@ -1,5 +1,6 @@
 # streaktracker
 A Claude-built, Gemini-mangled, Claude-corrected vibe-coded artifact/app to track activity streaks.
+Use it here: [https://zedaysi.github.io/streaktracker/index.html]
 
 ## what for
 Use to, for example, track how many pushups you've done for how many days continuously. Or to count up an ever-lengthening period of abstinence from chocolate. Or to build a good habit such as meditating every day.
