@@ -1,807 +1,370 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streak Tracker (Vanilla JS)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        /* Base styles for the app */
-        body { margin: 0; padding: 0; }
-        .min-h-screen { min-height: 100vh; }
-        /* Style for hidden input used in file upload */
-        #import-file { display: none; }
-        /* Style the chart container */
-        .chart-container { position: relative; height: 300px; width: 100%; }
-        /* Ensure disabled buttons cannot be clicked */
-        button:disabled { pointer-events: none; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Streak Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:linear-gradient(to bottom right,#eff6ff,#e0e7ff);min-height:100vh;padding:1rem}
+.container{max-width:48rem;margin:0 auto}
+.card{background:#fff;border-radius:.5rem;box-shadow:0 4px 6px rgba(0,0,0,.1);padding:1.5rem;margin-bottom:1rem}
+h1{font-size:1.875rem;color:#1f2937;margin-bottom:.5rem}
+h2{font-size:1.5rem;color:#1f2937;margin-bottom:1rem}
+h3{font-size:1.125rem;color:#1f2937}
+.btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem}
+.btn{padding:1rem;border:none;border-radius:.5rem;font-weight:600;cursor:pointer}
+.btn-primary{background:#4f46e5;color:#fff}
+.btn-success{background:#10b981;color:#fff}
+.btn-purple{background:#9333ea;color:#fff}
+.btn-gray{background:#6b7280;color:#fff}
+.btn-secondary{background:#e5e7eb;color:#374151}
+.btn-saved{background:#d1d5db;color:#6b7280}
+.input,.select{width:100%;padding:.75rem;border:2px solid #e5e7eb;border-radius:.5rem;margin-bottom:1rem}
+.label{display:block;font-size:.875rem;font-weight:500;color:#374151;margin-bottom:.5rem}
+.activity-card{background:#fff;border-radius:.5rem;box-shadow:0 4px 6px rgba(0,0,0,.1);padding:1rem;margin-bottom:.75rem}
+.activity-header{display:flex;justify-content:space-between;margin-bottom:.75rem}
+.activity-meta{display:flex;flex-wrap:wrap;gap:.5rem;font-size:.875rem;color:#6b7280;margin-top:.5rem}
+.badge{background:#f3f4f6;padding:.25rem .5rem;border-radius:.25rem;font-size:.75rem}
+.days-left{font-size:.75rem;color:#ea580c;font-weight:500;margin-top:.25rem}
+.delete-btn{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:1.25rem}
+.delete-btn:hover{color:#ef4444}
+.activity-controls{display:flex;gap:.75rem}
+.activity-controls>div{flex:1}
+.hidden{display:none!important}
+.empty{text-align:center;color:#6b7280;padding:2rem}
+.info-box{padding:1rem;border:2px solid;border-radius:.5rem;margin-bottom:1rem}
+.info-blue{background:#eff6ff;border-color:#bfdbfe}
+.info-green{background:#f0fdf4;border-color:#bbf7d0}
+</style>
 </head>
-<body class="bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-
-    <div id="root" class="max-w-2xl mx-auto">
-        </div>
-
-    <script>
-        // ====================================================================
-        // Core Application State and Logic (Replacing React/Hooks)
-        // ====================================================================
-
-        let state = {
-            activities: [],
-            view: 'main', // 'main', 'add', 'graphs', 'history', 'settings'
-            selectedActivity: null,
-            graphPeriod: 'week', // 'week', 'month', 'year', 'all'
-            // Local state for AddView and ActCard
-            addName: '',
-            addType: 'cumulative',
-            addFreq: 'daily',
-            addFreqType: 'calendar',
-            actCardValues: {} // Stores input values for ActCards: { activityId: value }
-        };
-
-        const ROOT_KEY = 'streak_tracker_activities';
-
-        // --- Persistence Functions (Replacing window.storage with localStorage) ---
-
-        const loadData = () => {
-            try {
-                const data = localStorage.getItem(ROOT_KEY);
-                if (data) {
-                    state.activities = JSON.parse(data);
-                }
-            } catch (error) {
-                console.log('Starting fresh or error loading data:', error);
-                state.activities = [];
-            }
-        };
-
-        const saveData = (data) => {
-            try {
-                localStorage.setItem(ROOT_KEY, JSON.stringify(data));
-                state.activities = data;
-                renderApp(); // Re-render the app after state change
-            } catch (error) {
-                console.error('Save failed:', error);
-            }
-        };
-
-        // --- Core Logic Functions (Adapted from React Component) ---
-
-        const getStreak = (a) => {
-            if (!a.streaks.length) return 0;
-            const last = a.streaks[a.streaks.length - 1];
-            const lastVal = last.entries[last.entries.length - 1]?.value;
-            if (lastVal === 'reset' || lastVal === 'missed') return 0;
-            
-            const freq = a.frequency || 'daily';
-            if (freq === 'daily') {
-              const today = new Date().toISOString().split('T')[0];
-              const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-              if (last.end === today || last.end === yest) {
-                return last.entries.filter(e => e.value !== 'reset' && e.value !== 'missed').length;
-              }
-            }
-            return 0;
-        };
-
-        const getLastVal = (a) => {
-            if (!a.entries.length) return a.type === 'cumulative' ? 0 : null;
-            // Ensure entries are sorted descending by date for the *last* entry
-            return [...a.entries].sort((x, y) => new Date(y.date) - new Date(x.date))[0].value;
-        };
-
-        const calcStreaks = (ents, type, freq) => {
-            if (!ents.length) return [];
-            const sorted = [...ents].sort((a, b) => new Date(a.date) - new Date(b.date));
-            const streaks = [];
-            let cur = { start: sorted[0].date, end: sorted[0].date, entries: [sorted[0]] };
-            
-            for (let i = 1; i < sorted.length; i++) {
-              const dayDiff = (new Date(sorted[i].date) - new Date(sorted[i - 1].date)) / 86400000;
-              const broke = (type === 'days-since' || type === 'positive-habit') && (sorted[i].value === 'reset' || sorted[i].value === 'missed');
-              
-              if (broke || (freq === 'daily' && dayDiff > 1)) {
-                streaks.push(cur);
-                cur = { start: sorted[i].date, end: sorted[i].date, entries: [sorted[i]] };
-              } else if (freq === 'daily' && dayDiff === 1) {
-                cur.end = sorted[i].date;
-                cur.entries.push(sorted[i]);
-              } else if (freq !== 'daily') {
-                cur.end = sorted[i].date;
-                cur.entries.push(sorted[i]);
-              }
-            }
-            streaks.push(cur);
-            return streaks;
-        };
-        
-        const saveEntry = (actId, val) => {
-            const today = new Date().toISOString().split('T')[0];
-            const updated = state.activities.map(a => {
-              if (a.id !== actId) return a;
-              const idx = a.entries.findIndex(e => e.date === today);
-              const ents = [...a.entries];
-              
-              // Coerce to number if cumulative
-              const finalVal = a.type === 'cumulative' ? Number(val) : val;
-
-              if (idx >= 0) {
-                ents[idx] = { date: today, value: finalVal };
-              } else {
-                ents.push({ date: today, value: finalVal });
-              }
-              return { ...a, entries: ents, streaks: calcStreaks(ents, a.type, a.frequency || 'daily') };
-            });
-            saveData(updated);
-        };
-
-        const addActivity = (name, type, freq, freqType) => {
-            console.log("Activity added: ", name); // DEBUG LOG
-            const act = {
-                id: Date.now().toString(),
-                name,
-                type,
-                frequency: freq || 'daily',
-                frequencyType: freqType || 'calendar',
-                entries: [],
-                streaks: []
-            };
-            
-            // 1. Update the state with the new activity
-            const newActivities = [...state.activities, act];
-            
-            // 2. Clear local form state and switch view
-            state.addName = '';
-            state.addType = 'cumulative';
-            state.addFreq = 'daily';
-            state.addFreqType = 'calendar';
-            state.view = 'main'; // Switch view before saving
-
-            // 3. Save the data (which automatically triggers renderApp())
-            saveData(newActivities);
-        };
-
-
-        const delActivity = (id) => saveData(state.activities.filter(a => a.id !== id));
-
-        const getDaysLeft = (a) => {
-            const freq = a.frequency || 'daily';
-            if (freq === 'daily') return null;
-            const today = new Date();
-            const freqType = a.frequencyType || 'calendar';
-            
-            if (freq === 'weekly') {
-              if (freqType === 'calendar') {
-                const day = today.getDay(); // 0 is Sunday, 1 is Monday
-                return day === 0 ? 1 : 8 - day; // If Sunday, 1 day left (end of period), otherwise 8 - day
-              }
-              if (a.entries.length) {
-                const last = new Date([...a.entries].sort((x, y) => new Date(y.date) - new Date(x.date))[0].date);
-                const days = Math.floor((today - last) / 86400000);
-                return Math.max(0, 7 - days);
-              }
-              return 7;
-            }
-            
-            if (freq === 'monthly') {
-              if (freqType === 'calendar') {
-                return new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate() + 1;
-              }
-              if (a.entries.length) {
-                const last = new Date([...a.entries].sort((x, y) => new Date(y.date) - new Date(x.date))[0].date);
-                const days = Math.floor((today - last) / 86400000);
-                return Math.max(0, 30 - days);
-              }
-              return 30;
-            }
-            return null;
-        };
-
-        const exportData = () => {
-            const str = JSON.stringify(state.activities, null, 2);
-            if (navigator.clipboard?.writeText) {
-              navigator.clipboard.writeText(str).then(() => alert('Copied to clipboard!')).catch(() => downloadBackup(str));
-            } else {
-              downloadBackup(str);
-            }
-        };
-
-        const downloadBackup = (str) => {
-            const blob = new Blob([str], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `streak-backup-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        };
-
-        const handleImport = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-              const reader = new FileReader();
-              reader.onload = (ev) => {
-                try {
-                  const importedData = JSON.parse(ev.target.result);
-                  // Basic validation: must be an array
-                  if (Array.isArray(importedData)) {
-                      saveData(importedData);
-                      alert('Imported!');
-                      state.view = 'main';
-                      renderApp();
-                  } else {
-                      alert('Error importing: File content is not a valid data array.');
-                  }
-                } catch (error) {
-                  alert('Error importing: File content is corrupted or invalid JSON.');
-                }
-              };
-              reader.readAsText(file);
-            }
-        };
-
-        // --- View Rendering Functions (Replacing React Components) ---
-
-        // Helper to create elements with Tailwind classes (Compatibility-safe version)
-        const h = (tag, classes = '', children = [], attributes = {}) => {
-            const el = document.createElement(tag);
-            if (classes) el.className = classes;
-            
-            // Ensure children is treated as an array, handling single element or null/undefined gracefully.
-            const childrenInput = Array.isArray(children) ? children : (children != null ? [children] : []);
-
-            const append = (item) => {
-                if (typeof item === 'string' || typeof item === 'number') {
-                    el.appendChild(document.createTextNode(item));
-                } else if (item instanceof Node) {
-                    el.appendChild(item);
-                }
-            };
-            
-            // Safe, manual single-level iteration (replaces .flat() for compatibility)
-            childrenInput.forEach(child => {
-                if (child == null || child === false) return; // Skip falsy values
-                
-                if (Array.isArray(child)) {
-                    child.forEach(nestedChild => append(nestedChild));
-                } else {
-                    append(child);
-                }
-            });
-            
-            Object.keys(attributes).forEach(key => {
-                // Special handling for boolean properties like 'disabled'
-                if (typeof attributes[key] === 'boolean') {
-                    if (attributes[key]) {
-                        el.setAttribute(key, key);
-                    }
-                } 
-                // If it's an event handler (like onclick) skip setting it as an attribute
-                else if (!key.startsWith('on')) {
-                    el.setAttribute(key, attributes[key]);
-                }
-            });
-            return el;
-        };
-
-        // Helper to render Lucide Icons (as data-lucide attribute)
-        const Icon = (name, classes = 'w-5 h-5') => {
-            return h('i', classes, [], { 'data-lucide': name });
-        };
-
-
-        function renderActCard(a) {
-            const lastVal = getLastVal(a);
-            const streak = getStreak(a);
-            const daysLeft = getDaysLeft(a);
-            const today = new Date().toISOString().split('T')[0];
-            const saved = a.entries.some(e => e.date === today);
-
-            // Initialize local input state if not present
-            if (state.actCardValues[a.id] === undefined) {
-                 if (a.type === 'cumulative') {
-                    state.actCardValues[a.id] = lastVal || 0;
-                 } else if (a.type === 'days-since') {
-                    state.actCardValues[a.id] = 'kept';
-                 } else { // positive-habit
-                    state.actCardValues[a.id] = 'did';
-                 }
-            }
-            let val = state.actCardValues[a.id];
-            
-            const nums = Array.from({ length: 201 }, (_, i) => i);
-            
-            const freqLabel = () => {
-              const f = a.frequency || 'daily';
-              if (f === 'daily') return 'Daily';
-              const ft = a.frequencyType || 'calendar';
-              if (f === 'weekly') return ft === 'calendar' ? 'Weekly (Mon-Sun)' : 'Within 7 days';
-              if (f === 'monthly') return ft === 'calendar' ? 'Monthly (calendar)' : 'Within 30 days';
-              return '';
-            };
-
-            let inputElement;
-
-            // --- Input Element Logic ---
-            const handleInputChange = (e) => {
-                state.actCardValues[a.id] = e.target.value;
-            };
-
-            if (a.type === 'cumulative') {
-              inputElement = h('select', 'w-full p-3 border-2 border-gray-200 rounded-lg text-lg font-semibold focus:border-indigo-500 focus:outline-none', 
-                nums.map(n => h('option', '', n.toString(), { value: n.toString() })),
-                { value: val.toString() }
-              );
-              inputElement.onchange = handleInputChange;
-            } else if (a.type === 'days-since') {
-              inputElement = h('select', 'w-full p-3 border-2 border-gray-200 rounded-lg text-lg font-semibold focus:border-indigo-500 focus:outline-none', [
-                h('option', '', 'Kept it going ✓', { value: 'kept' }),
-                h('option', '', 'Reset streak ✗', { value: 'reset' }),
-              ], { value: val.toString() });
-              inputElement.onchange = handleInputChange;
-            } else { // positive-habit
-              inputElement = h('select', 'w-full p-3 border-2 border-gray-200 rounded-lg text-lg font-semibold focus:border-indigo-500 focus:outline-none', [
-                h('option', '', 'Did it ✓', { value: 'did' }),
-                h('option', '', 'Missed it ✗', { value: 'missed' }),
-              ], { value: val.toString() });
-              inputElement.onchange = handleInputChange;
-            }
-
-            // --- Save Button Logic ---
-            const saveBtn = h('button', 
-                `px-6 py-3 rounded-lg font-semibold ${saved ? 'bg-gray-300 text-gray-600' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`, 
-                saved ? 'Saved' : 'Save'
-            );
-            saveBtn.onclick = () => saveEntry(a.id, state.actCardValues[a.id]);
-
-            const deleteBtn = h('button', 'text-gray-400 hover:text-red-500', Icon('x', 'w-5 h-5'));
-            deleteBtn.onclick = () => delActivity(a.id);
-
-
-            return h('div', 'bg-white rounded-lg shadow-lg p-4', [
-              h('div', 'flex items-center justify-between mb-3', [
-                h('div', 'flex-1', [
-                  h('h3', 'text-lg font-semibold text-gray-800', a.name),
-                  h('div', 'flex flex-wrap items-center gap-2 text-sm text-gray-600', [
-                    h('span', 'flex items-center gap-1', [
-                      Icon('award', 'w-3.5 h-3.5'),
-                      `Streak: ${streak} ${(a.frequency || 'daily') === 'daily' ? 'days' : 'periods'}`,
-                    ]),
-                    a.type === 'cumulative' && lastVal > 0 && h('span', '', `Last: ${lastVal}`),
-                    h('span', 'text-xs bg-gray-100 px-2 py-1 rounded', freqLabel()),
-                  ]),
-                  daysLeft !== null && h('div', 'text-xs text-orange-600 font-medium mt-1', `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`),
-                ]),
-                deleteBtn,
-              ]),
-              h('div', 'flex items-center gap-3', [
-                h('div', 'flex-1', inputElement),
-                saveBtn,
-              ])
-            ]);
-        }
-
-        function renderMainView() {
-            const activityCards = state.activities.map(renderActCard);
-
-            // --- Main Buttons (Applying explicit onclick properties) ---
-            const addButton = h('button', 'bg-indigo-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-indigo-700', [Icon('plus', 'w-5 h-5'), 'Add']);
-            addButton.onclick = () => { state.view = 'add'; renderApp(); };
-
-            const graphsButton = h('button', 'bg-emerald-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-emerald-700', [Icon('trending-up', 'w-5 h-5'), 'Graphs']);
-            graphsButton.onclick = () => { state.view = 'graphs'; renderApp(); };
-
-            const historyButton = h('button', 'bg-purple-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-purple-700', [Icon('award', 'w-5 h-5'), 'History']);
-            historyButton.onclick = () => { state.view = 'history'; renderApp(); };
-
-            const settingsButton = h('button', 'bg-gray-600 text-white rounded-lg p-4 flex items-center justify-center gap-2 hover:bg-gray-700', [Icon('settings', 'w-5 h-5'), 'Backup']);
-            settingsButton.onclick = () => { state.view = 'settings'; renderApp(); };
-            // --- End Main Buttons ---
-
-
-            return h('div', 'space-y-4', [
-                h('div', 'bg-white rounded-lg shadow-lg p-6', [
-                    h('h1', 'text-3xl font-bold text-gray-800 mb-2', 'Streak Tracker'),
-                    h('p', 'text-gray-600', 'Build habits, break records, track streaks'),
-                ]),
-                h('div', 'grid grid-cols-2 gap-2', [
-                    addButton,
-                    graphsButton,
-                    historyButton,
-                    settingsButton,
-                ]),
-                
-                state.activities.length === 0 ? 
-                    h('div', 'bg-white rounded-lg shadow-lg p-8 text-center', [h('p', 'text-gray-500', 'No activities yet!')]) :
-                    h('div', 'space-y-3', activityCards)
-            ]);
-        }
-
-        function renderAddView() {
-            // Handlers trigger full re-render
-            const handleNameChange = (e) => { state.addName = e.target.value; renderApp(); }; 
-            const handleTypeChange = (e) => { state.addType = e.target.value; renderApp(); }; 
-            const handleFreqChange = (e) => { state.addFreq = e.target.value; renderApp(); }; 
-            const handleFreqTypeChange = (e) => { state.addFreqType = e.target.value; renderApp(); }; 
-            
-            const isNameValid = state.addName.trim().length > 0;
-
-            const nameInput = h('input', 'w-full p-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none', [], { 
-                value: state.addName, placeholder: "Push-ups", type: 'text'
-            });
-            nameInput.oninput = handleNameChange;
-
-            const typeSelect = h('select', 'w-full p-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none', [
-                h('option', '', 'Cumulative (count)', { value: 'cumulative' }),
-                h('option', '', 'Positive Habit', { value: 'positive-habit' }),
-                h('option', '', 'Days Since', { value: 'days-since' }),
-            ], { value: state.addType });
-            typeSelect.onchange = handleTypeChange;
-
-            let optionalFreqElements = [];
-            if (state.addType === 'positive-habit' || state.addType === 'days-since') {
-                const freqSelect = h('select', 'w-full p-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none', [
-                    h('option', '', 'Daily', { value: 'daily' }),
-                    h('option', '', 'Weekly', { value: 'weekly' }),
-                    h('option', '', 'Monthly', { value: 'monthly' }),
-                ], { value: state.addFreq });
-                freqSelect.onchange = handleFreqChange;
-
-                optionalFreqElements.push(h('div', '', [
-                    h('label', 'block text-sm font-medium text-gray-700 mb-2', 'Frequency'),
-                    freqSelect,
-                ]));
-
-                if (state.addFreq !== 'daily') {
-                    const freqTypeSelect = h('select', 'w-full p-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none', [
-                        h('option', '', state.addFreq === 'weekly' ? 'Once per week' : 'Once per month', { value: 'calendar' }),
-                        h('option', '', state.addFreq === 'weekly' ? 'Within 7 days' : 'Within 30 days', { value: 'rolling' }),
-                    ], { value: state.addFreqType });
-                    freqTypeSelect.onchange = handleFreqTypeChange;
-
-                    optionalFreqElements.push(h('div', '', [
-                        h('label', 'block text-sm font-medium text-gray-700 mb-2', 'Period'),
-                        freqTypeSelect,
-                    ]));
-                }
-            }
-
-            // --- Add Button Logic (REVISED to explicitly handle color and state) ---
-            const addBtn = h('button', 'flex-1 rounded-lg p-3 font-semibold', 'Add');
-            
-            if (isNameValid) {
-                // Button is ACTIVE
-                addBtn.className = addBtn.className + ' bg-indigo-600 text-white hover:bg-indigo-700';
-                addBtn.disabled = false;
-                
-                // ATTACHMENT: Set the click handler directly
-                addBtn.onclick = () => {
-                    console.log("Activity added (CLICK SUCCESSFUL): ", state.addName);
-                    addActivity(state.addName.trim(), state.addType, state.addFreq, state.addFreqType);
-                };
-
-            } else {
-                // Button is DISABLED (Gray/Grey)
-                addBtn.className = addBtn.className + ' bg-gray-400 text-white';
-                addBtn.disabled = true;
-                addBtn.onclick = null; // Ensure no click handler is attached when disabled
-            }
-            // --- End Add Button Logic ---
-
-
-            // --- Cancel Button Logic ---
-            const cancelBtn = h('button', 'flex-1 bg-gray-200 text-gray-700 rounded-lg p-3 font-semibold hover:bg-gray-300', 'Cancel');
-            cancelBtn.onclick = () => { state.view = 'main'; renderApp(); };
-            // --- End Cancel Button Logic ---
-
-
-            return h('div', 'bg-white rounded-lg shadow-lg p-6', [
-                h('h2', 'text-2xl font-bold text-gray-800 mb-4', 'Add Activity'),
-                h('div', 'space-y-4', [
-                    h('div', '', [
-                        h('label', 'block text-sm font-medium text-gray-700 mb-2', 'Name'),
-                        nameInput,
-                    ]),
-                    h('div', '', [
-                        h('label', 'block text-sm font-medium text-gray-700 mb-2', 'Type'),
-                        typeSelect,
-                    ]),
-                    ...optionalFreqElements,
-                ]),
-                h('div', 'flex gap-3 mt-6', [
-                    addBtn,
-                    cancelBtn,
-                ])
-            ]);
-        }
-
-        let chartInstance = null; // Store the Chart.js instance
-
-        function renderGraphsView() {
-
-            const handlePeriodChange = (p) => {
-                state.graphPeriod = p;
-                renderApp('graphs'); // Re-render to update the chart
-            };
-
-            const getData = (a, period) => {
-              const now = Date.now();
-              const starts = { week: now - 7 * 86400000, month: now - 30 * 86400000, year: now - 365 * 86400000, all: 0 };
-              // Filter to only cumulative activities
-              const filteredEntries = a.entries.filter(e => new Date(e.date).getTime() >= starts[period] && a.type === 'cumulative');
-              
-              return filteredEntries.sort((x, y) => new Date(x.date) - new Date(y.date)).map(e => ({ 
-                  date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 
-                  value: e.value 
-              }));
-            };
-
-            const cumulativeActivities = state.activities.filter(a => a.type === 'cumulative');
-
-            // --- Component Structure ---
-            const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
-            
-            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
-            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
-
-            container.appendChild(h('div', 'flex items-center justify-between mb-4', [
-                h('h2', 'text-2xl font-bold text-gray-800', 'Graphs'),
-                closeBtn,
-            ]));
-
-            if (!state.selectedActivity) {
-                // Activity Selection View
-                const selectorView = h('div', 'space-y-2');
-                selectorView.appendChild(h('p', 'text-gray-600 mb-3', 'Select activity:'));
-
-                if (cumulativeActivities.length === 0) {
-                     selectorView.appendChild(h('p', 'text-gray-500 text-center py-4', 'No cumulative activities'));
-                } else {
-                    cumulativeActivities.forEach(a => {
-                        const btn = h('button', 'w-full p-4 text-left bg-gray-50 hover:bg-indigo-50 rounded-lg border-2 border-transparent hover:border-indigo-300', a.name);
-                        btn.onclick = () => { state.selectedActivity = a; renderApp('graphs'); };
-                        selectorView.appendChild(btn);
-                    });
-                }
-                container.appendChild(selectorView);
-            } else {
-                // Graph Display View
-                const graphView = h('div');
-                
-                const backBtn = h('button', 'text-sm text-indigo-600', '← Back');
-                backBtn.onclick = () => { state.selectedActivity = null; renderApp('graphs'); };
-
-                graphView.appendChild(h('div', 'flex items-center justify-between mb-4', [
-                    h('h3', 'text-xl font-semibold', state.selectedActivity.name),
-                    backBtn,
-                ]));
-
-                // Period Selector
-                const periodSelector = h('div', 'flex gap-2 mb-4');
-                ['week', 'month', 'year', 'all'].forEach(p => {
-                    const btn = h('button', `flex-1 py-2 rounded-lg font-medium ${state.graphPeriod === p ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'}`, 
-                        p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1)
-                    );
-                    btn.onclick = () => handlePeriodChange(p);
-                    periodSelector.appendChild(btn);
-                });
-                graphView.appendChild(periodSelector);
-                
-                // Chart Container
-                const chartContainer = h('div', 'chart-container', [
-                    h('canvas', '', [], { id: 'myChart' })
-                ]);
-                graphView.appendChild(chartContainer);
-
-                container.appendChild(graphView);
-
-                // --- Chart.js Initialization (must happen *after* elements are in the DOM) ---
-                setTimeout(() => {
-                    const chartData = getData(state.selectedActivity, state.graphPeriod);
-                    const ctx = document.getElementById('myChart');
-
-                    // Destroy existing chart instance before creating a new one
-                    if (chartInstance) {
-                        chartInstance.destroy();
-                    }
-
-                    if (ctx) {
-                        chartInstance = new Chart(ctx, {
-                            type: 'line',
-                            data: {
-                                labels: chartData.map(d => d.date),
-                                datasets: [{
-                                    label: state.selectedActivity.name,
-                                    data: chartData.map(d => d.value),
-                                    borderColor: '#4f46e5', // Tailwind indigo-600
-                                    borderWidth: 2,
-                                    tension: 0.1,
-                                    fill: false
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                scales: {
-                                    y: { beginAtZero: true }
-                                },
-                                plugins: {
-                                    legend: { display: false }
-                                }
-                            }
-                        });
-                    }
-                }, 0); 
-            }
-
-            return container;
-        }
-
-        function renderHistoryView() {
-            const streaks = state.activities.flatMap(a => a.streaks.map(s => ({
-              name: a.name,
-              type: a.type,
-              len: s.entries.filter(e => e.value !== 'reset' && e.value !== 'missed').length,
-              end: s.end,
-              peak: a.type === 'cumulative' ? Math.max(-Infinity, ...s.entries.map(e => e.value).filter(v => typeof v === 'number')) : null,
-              latest: s.entries[s.entries.length - 1]?.value,
-              ongoing: s.end === a.streaks[a.streaks.length - 1].end && getStreak(a) > 0
-            }))).sort((x, y) => new Date(y.end) - new Date(x.end));
-
-            const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
-            
-            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
-            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
-            
-            container.appendChild(h('div', 'flex items-center justify-between mb-4', [
-                h('h2', 'text-2xl font-bold text-gray-800', 'History'),
-                closeBtn,
-            ]));
-
-            if (streaks.length === 0) {
-                 container.appendChild(h('p', 'text-gray-500 text-center py-4', 'No streaks yet!'));
-            } else {
-                const list = h('div', 'space-y-3');
-                streaks.forEach(s => {
-                    const dateDisplay = s.ongoing 
-                        ? h('span', 'text-emerald-600 font-medium', 'Ongoing') 
-                        : h('span', '', `Ended ${new Date(s.end).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`);
-
-                    const badge = s.ongoing 
-                        ? h('span', 'ml-2 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-semibold rounded', 'Active') 
-                        : null;
-
-                    const details = [
-                        h('span', 'font-medium', `${s.len} ${s.len === 1 ? 'day' : 'days'}`),
-                        s.type === 'cumulative' && s.peak !== null && s.peak !== -Infinity && h('span', '', `, peak = ${s.peak}`),
-                        s.type === 'cumulative' && s.ongoing && h('span', '', `, latest = ${s.latest}`),
-                    ].filter(Boolean);
-
-                    list.appendChild(h('div', 'p-4 bg-gray-50 border-2 border-gray-200', [
-                        h('div', 'flex items-start justify-between', [
-                            h('div', 'flex-1', [
-                                h('h3', 'font-semibold text-gray-800', s.name),
-                                h('p', 'text-sm text-gray-600 mt-1', details),
-                                h('p', 'text-xs text-gray-500 mt-1', dateDisplay),
-                            ]),
-                            badge
-                        ])
-                    ]));
-                });
-                container.appendChild(list);
-            }
-
-            return container;
-        }
-
-        function renderSettingsView() {
-            const fileInput = h('input', 'hidden', [], { type: 'file', accept: '.json', id: 'import-file' });
-            fileInput.onchange = handleImport; // Ensure event listener is attached
-
-            const container = h('div', 'bg-white rounded-lg shadow-lg p-6');
-            
-            const closeBtn = h('button', 'text-gray-600 hover:text-gray-800', Icon('x', 'w-6 h-6'));
-            closeBtn.onclick = () => { state.view = 'main'; renderApp(); };
-
-            const exportBtn = h('button', 'w-full bg-blue-600 text-white rounded-lg p-3 font-semibold hover:bg-blue-700', 'Copy to Clipboard');
-            exportBtn.onclick = exportData;
-
-
-            container.appendChild(h('div', 'flex items-center justify-between mb-4', [
-                h('h2', 'text-2xl font-bold text-gray-800', 'Backup'),
-                closeBtn,
-            ]));
-            
-            container.appendChild(h('div', 'space-y-4', [
-                h('div', 'p-4 bg-blue-50 border-2 border-blue-200 rounded-lg', [
-                    h('h3', 'font-semibold text-blue-900 mb-2', 'Export'),
-                    h('p', 'text-sm text-blue-800 mb-3', 'Copies backup to clipboard'),
-                    exportBtn,
-                ]),
-                h('div', 'p-4 bg-green-50 border-2 border-green-200 rounded-lg', [
-                    h('h3', 'font-semibold text-green-900 mb-2', 'Import'),
-                    h('p', 'text-sm text-green-800 mb-3', 'Restore from backup file'),
-                    h('label', 'block w-full bg-green-600 text-white rounded-lg p-3 font-semibold hover:bg-green-700 text-center cursor-pointer', 'Choose File', { for: 'import-file' }),
-                    fileInput,
-                ]),
-                h('div', 'p-4 bg-amber-50 border-2 border-amber-200 rounded-lg', [
-                    h('h3', 'font-semibold text-amber-900 mb-2', '⚠️ Notes'),
-                    h('ul', 'text-sm text-amber-800 space-y-1 list-disc list-inside', [
-                        h('li', '', "Data doesn't sync between devices (it's local)"),
-                        h('li', '', 'Import overwrites existing data'),
-                    ]),
-                ]),
-            ]));
-            
-            return container;
-        }
-
-        // --- Master Renderer ---
-
-        function renderApp(renderType = 'full') {
-            const root = document.getElementById('root');
-            if (renderType === 'full') {
-                 root.innerHTML = ''; // Clear previous view completely
-            }
-           
-
-            let viewElement;
-            switch (state.view) {
-                case 'main':
-                    viewElement = renderMainView();
-                    break;
-                case 'add':
-                    viewElement = renderAddView();
-                    break;
-                case 'graphs':
-                    viewElement = renderGraphsView();
-                    break;
-                case 'history':
-                    viewElement = renderHistoryView();
-                    break;
-                case 'settings':
-                    viewElement = renderSettingsView();
-                    break;
-                default:
-                    viewElement = renderMainView();
-            }
-            
-            if (renderType === 'full' && viewElement) {
-                root.appendChild(viewElement);
-            }
-            
-            // Re-call Lucide to render all the newly added icon elements
-            if (window.lucide) {
-                window.lucide.createIcons();
-            }
-        }
-
-        // ====================================================================
-        // Application Initialization (ADDED global try/catch for robustness)
-        // ====================================================================
-
-        document.addEventListener('DOMContentLoaded', () => {
-            try {
-                loadData(); // Load data from localStorage
-                renderApp(); // Render the initial view
-            } catch (error) {
-                const root = document.getElementById('root');
-                root.innerHTML = `
-                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-                        <strong class="font-bold">App Initialization Error:</strong>
-                        <span class="block sm:inline">The application failed to start due to a rendering error. Check console for details.</span>
-                        <p class="mt-2 text-sm">Error: ${error.message}</p>
-                    </div>
-                `;
-                console.error("Fatal Application Error during DOMContentLoaded:", error);
-            }
-        });
-    </script>
-
+<body>
+<div class="container">
+<div id="main">
+<div class="card"><h1>Streak Tracker</h1><p>Build habits, break records, track streaks</p></div>
+<div class="btn-grid">
+<button class="btn btn-primary" onclick="view('add')">Add</button>
+<button class="btn btn-success" onclick="view('graphs')">Graphs</button>
+<button class="btn btn-purple" onclick="view('history')">History</button>
+<button class="btn btn-gray" onclick="view('backup')">Backup</button>
+</div>
+<div id="list"></div>
+</div>
+<div id="add" class="hidden">
+<div class="card">
+<h2>Add Activity</h2>
+<label class="label">Name</label>
+<input id="name" class="input">
+<label class="label">Type</label>
+<select id="type" class="select" onchange="updateForm()">
+<option value="cumulative">Cumulative</option>
+<option value="positive-habit">Positive Habit</option>
+<option value="days-since">Days Since</option>
+</select>
+<div id="freqOpt" class="hidden">
+<label class="label">Frequency</label>
+<select id="freq" class="select" onchange="updateForm()">
+<option value="daily">Daily</option>
+<option value="weekly">Weekly</option>
+<option value="monthly">Monthly</option>
+</select>
+<div id="freqTypeOpt" class="hidden">
+<label class="label">Period</label>
+<select id="freqType" class="select"></select>
+</div>
+</div>
+<div style="display:flex;gap:.75rem">
+<button class="btn btn-primary" style="flex:1" onclick="addAct()">Add</button>
+<button class="btn btn-secondary" style="flex:1" onclick="view('main')">Cancel</button>
+</div>
+</div>
+</div>
+<div id="graphs" class="hidden">
+<div class="card">
+<div style="display:flex;justify-content:space-between;margin-bottom:1rem">
+<h2 style="margin:0">Graphs</h2>
+<button class="delete-btn" onclick="view('main')">✕</button>
+</div>
+<div id="gSel"></div>
+<div id="gDisp" class="hidden">
+<div style="display:flex;justify-content:space-between;margin-bottom:1rem">
+<h3 id="gTitle"></h3>
+<button class="btn btn-secondary" onclick="deselG()">Back</button>
+</div>
+<div style="display:flex;gap:.5rem;margin-bottom:1rem">
+<button class="btn btn-secondary" style="flex:1" onclick="setPeriod('week')">Week</button>
+<button class="btn btn-secondary" style="flex:1" onclick="setPeriod('month')">Month</button>
+<button class="btn btn-secondary" style="flex:1" onclick="setPeriod('year')">Year</button>
+<button class="btn btn-secondary" style="flex:1" onclick="setPeriod('all')">All</button>
+</div>
+<canvas id="chart"></canvas>
+</div>
+</div>
+</div>
+<div id="history" class="hidden">
+<div class="card">
+<div style="display:flex;justify-content:space-between;margin-bottom:1rem">
+<h2 style="margin:0">History</h2>
+<button class="delete-btn" onclick="view('main')">✕</button>
+</div>
+<div id="hList"></div>
+</div>
+</div>
+<div id="backup" class="hidden">
+<div class="card">
+<div style="display:flex;justify-content:space-between;margin-bottom:1rem">
+<h2 style="margin:0">Backup</h2>
+<button class="delete-btn" onclick="view('main')">✕</button>
+</div>
+<div class="info-box info-blue">
+<h3 style="color:#1e3a8a;margin-bottom:.5rem">Export</h3>
+<p style="font-size:.875rem;color:#1e40af;margin-bottom:.75rem">Copies to clipboard</p>
+<button class="btn" style="background:#2563eb;color:#fff;width:100%" onclick="exportData()">Copy</button>
+</div>
+<div class="info-box info-green">
+<h3 style="color:#065f46;margin-bottom:.5rem">Import</h3>
+<p style="font-size:.875rem;color:#047857;margin-bottom:.75rem">Restore from file</p>
+<input type="file" id="impFile" accept=".json" style="display:none">
+<button class="btn" style="background:#059669;color:#fff;width:100%" onclick="document.getElementById('impFile').click()">Choose File</button>
+</div>
+</div>
+</div>
+</div>
+<script>
+var acts=[],selAct=null,period='week',chart=null;
+function init(){
+var stored=localStorage.getItem('acts');
+if(stored)acts=JSON.parse(stored);
+render();
+document.getElementById('impFile').addEventListener('change',function(e){
+var f=e.target.files[0];
+if(!f)return;
+var r=new FileReader();
+r.onload=function(ev){
+try{acts=JSON.parse(ev.target.result);save();alert('Imported!');view('main');}catch(e){alert('Error importing');}
+};
+r.readAsText(f);
+});
+}
+function save(){localStorage.setItem('acts',JSON.stringify(acts));render();}
+function view(v){
+['main','add','graphs','history','backup'].forEach(function(x){document.getElementById(x).classList.add('hidden');});
+document.getElementById(v).classList.remove('hidden');
+if(v==='graphs')renderGSel();
+if(v==='history')renderHist();
+}
+function updateForm(){
+var t=document.getElementById('type').value;
+var f=document.getElementById('freq').value;
+var fOpt=document.getElementById('freqOpt');
+var fTOpt=document.getElementById('freqTypeOpt');
+var fTSel=document.getElementById('freqType');
+if(t==='positive-habit'||t==='days-since'){
+fOpt.classList.remove('hidden');
+if(f!=='daily'){
+fTOpt.classList.remove('hidden');
+fTSel.innerHTML=f==='weekly'?'<option value="calendar">Once per week</option><option value="rolling">Within 7 days</option>':'<option value="calendar">Once per month</option><option value="rolling">Within 30 days</option>';
+}else{fTOpt.classList.add('hidden');}
+}else{fOpt.classList.add('hidden');}
+}
+function addAct(){
+var n=document.getElementById('name').value.trim();
+if(!n)return;
+var t=document.getElementById('type').value;
+var f=(t==='positive-habit'||t==='days-since')?document.getElementById('freq').value:'daily';
+var ft=f!=='daily'?document.getElementById('freqType').value:'calendar';
+acts.push({id:Date.now().toString(),name:n,type:t,frequency:f,frequencyType:ft,entries:[],streaks:[]});
+document.getElementById('name').value='';
+save();view('main');
+}
+function saveEnt(id,val){
+var today=new Date().toISOString().split('T')[0];
+var a=acts.find(function(x){return x.id===id;});
+if(!a)return;
+var idx=a.entries.findIndex(function(e){return e.date===today;});
+if(idx>=0)a.entries[idx].value=val;
+else a.entries.push({date:today,value:val});
+a.streaks=calcStreaks(a.entries,a.type,a.frequency);
+save();
+}
+function calcStreaks(ents,type,freq){
+if(!ents.length)return[];
+var sorted=ents.slice().sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+var streaks=[],cur={start:sorted[0].date,end:sorted[0].date,entries:[sorted[0]]};
+for(var i=1;i<sorted.length;i++){
+var diff=(new Date(sorted[i].date)-new Date(sorted[i-1].date))/86400000;
+var broke=(type==='days-since'||type==='positive-habit')&&(sorted[i].value==='reset'||sorted[i].value==='missed');
+if(broke||(freq==='daily'&&diff>1)){streaks.push(cur);cur={start:sorted[i].date,end:sorted[i].date,entries:[sorted[i]]};}
+else if(freq==='daily'&&diff===1){cur.end=sorted[i].date;cur.entries.push(sorted[i]);}
+else if(freq!=='daily'){cur.end=sorted[i].date;cur.entries.push(sorted[i]);}
+}
+streaks.push(cur);return streaks;
+}
+function getStreak(a){
+if(!a.streaks.length)return 0;
+var last=a.streaks[a.streaks.length-1];
+var lastVal=last.entries[last.entries.length-1];
+if(lastVal&&(lastVal.value==='reset'||lastVal.value==='missed'))return 0;
+if(a.frequency==='daily'){
+var today=new Date().toISOString().split('T')[0];
+var yest=new Date(Date.now()-86400000).toISOString().split('T')[0];
+if(last.end===today||last.end===yest)return last.entries.filter(function(e){return e.value!=='reset'&&e.value!=='missed';}).length;
+}
+return 0;
+}
+function getDaysLeft(a){
+var freq=a.frequency||'daily';
+if(freq==='daily')return null;
+var today=new Date();
+var ft=a.frequencyType||'calendar';
+if(freq==='weekly'){
+if(ft==='calendar'){var day=today.getDay();return day===0?1:8-day;}
+if(a.entries.length){
+var sorted=a.entries.slice().sort(function(x,y){return new Date(y.date)-new Date(x.date);});
+var last=new Date(sorted[0].date);
+return Math.max(0,7-Math.floor((today-last)/86400000));
+}
+return 7;
+}
+if(freq==='monthly'){
+if(ft==='calendar')return new Date(today.getFullYear(),today.getMonth()+1,0).getDate()-today.getDate()+1;
+if(a.entries.length){
+var sorted=a.entries.slice().sort(function(x,y){return new Date(y.date)-new Date(x.date);});
+var last=new Date(sorted[0].date);
+return Math.max(0,30-Math.floor((today-last)/86400000));
+}
+return 30;
+}
+return null;
+}
+function getLastVal(a){
+if(!a.entries.length)return a.type==='cumulative'?0:null;
+var sorted=a.entries.slice().sort(function(x,y){return new Date(y.date)-new Date(x.date);});
+return sorted[0].value;
+}
+function delAct(id){acts=acts.filter(function(a){return a.id!==id;});save();}
+function getFreqLabel(a){
+var freq=a.frequency||'daily';
+if(freq==='daily')return'Daily';
+var ft=a.frequencyType||'calendar';
+if(freq==='weekly')return ft==='calendar'?'Weekly (Mon-Sun)':'Within 7 days';
+if(freq==='monthly')return ft==='calendar'?'Monthly':'Within 30 days';
+return'';
+}
+function render(){
+var list=document.getElementById('list');
+if(!acts.length){list.innerHTML='<div class="card empty">No activities yet</div>';return;}
+var html='',today=new Date().toISOString().split('T')[0];
+for(var i=0;i<acts.length;i++){
+var a=acts[i],lastVal=getLastVal(a),streak=getStreak(a),daysLeft=getDaysLeft(a);
+var saved=a.entries.some(function(e){return e.date===today;});
+var selHTML='';
+if(a.type==='cumulative'){
+selHTML='<select class="select" id="val-'+a.id+'" style="margin:0;padding:.75rem;font-size:1.125rem;font-weight:600">';
+for(var n=0;n<=200;n++)selHTML+='<option value="'+n+'"'+(n===(lastVal||0)?' selected':'')+'>'+n+'</option>';
+selHTML+='</select>';
+}else if(a.type==='days-since'){
+selHTML='<select class="select" id="val-'+a.id+'" style="margin:0;padding:.75rem;font-size:1.125rem;font-weight:600"><option value="kept">Kept it going ✓</option><option value="reset">Reset streak ✗</option></select>';
+}else{
+selHTML='<select class="select" id="val-'+a.id+'" style="margin:0;padding:.75rem;font-size:1.125rem;font-weight:600"><option value="did">Did it ✓</option><option value="missed">Missed it ✗</option></select>';
+}
+html+='<div class="activity-card"><div class="activity-header"><div style="flex:1"><h3>'+a.name+'</h3><div class="activity-meta"><span>Streak: '+streak+' '+(a.frequency==='daily'?'days':'periods')+'</span>';
+if(a.type==='cumulative'&&lastVal>0)html+='<span>Last: '+lastVal+'</span>';
+html+='<span class="badge">'+getFreqLabel(a)+'</span></div>';
+if(daysLeft!==null)html+='<div class="days-left">'+daysLeft+' '+(daysLeft===1?'day':'days')+' left</div>';
+html+='</div><button class="delete-btn" onclick="delAct(\''+a.id+'\')">✕</button></div>';
+html+='<div class="activity-controls"><div>'+selHTML+'</div>';
+html+='<button class="btn '+(saved?'btn-saved':'btn-primary')+'" onclick="saveEnt(\''+a.id+'\',document.getElementById(\'val-'+a.id+'\').value)" style="padding:.75rem 1.5rem">'+(saved?'Saved':'Save')+'</button></div></div>';
+}
+list.innerHTML=html;
+}
+function renderGSel(){
+var cum=acts.filter(function(a){return a.type==='cumulative';});
+var sel=document.getElementById('gSel');
+if(!cum.length){sel.innerHTML='<p class="empty">No cumulative activities</p>';document.getElementById('gDisp').classList.add('hidden');return;}
+var html='<p style="color:#6b7280;margin-bottom:.75rem">Select activity:</p>';
+for(var i=0;i<cum.length;i++)html+='<button class="activity-card" onclick="selG(\''+cum[i].id+'\')" style="cursor:pointer"><strong>'+cum[i].name+'</strong></button>';
+sel.innerHTML=html;
+}
+function selG(id){
+selAct=acts.find(function(a){return a.id===id;});
+document.getElementById('gSel').classList.add('hidden');
+document.getElementById('gDisp').classList.remove('hidden');
+document.getElementById('gTitle').textContent=selAct.name;
+renderG();
+}
+function deselG(){
+selAct=null;
+document.getElementById('gSel').classList.remove('hidden');
+document.getElementById('gDisp').classList.add('hidden');
+if(chart)chart.destroy();
+}
+function setPeriod(p){period=p;renderG();}
+function renderG(){
+if(!selAct)return;
+var now=Date.now();
+var starts={week:now-7*86400000,month:now-30*86400000,year:now-365*86400000,all:0};
+var data=selAct.entries.filter(function(e){return new Date(e.date)>=starts[period];}).sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+var labels=[],values=[];
+for(var i=0;i<data.length;i++){
+labels.push(new Date(data[i].date).toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+values.push(data[i].value);
+}
+var ctx=document.getElementById('chart').getContext('2d');
+if(chart)chart.destroy();
+chart=new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:selAct.name,data:values,borderColor:'#4f46e5',backgroundColor:'rgba(79,70,229,0.1)',tension:0.1}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}}}});
+}
+function renderHist(){
+var streaks=[];
+for(var i=0;i<acts.length;i++){
+var a=acts[i];
+for(var j=0;j<a.streaks.length;j++){
+var s=a.streaks[j],len=0,peak=0;
+for(var k=0;k<s.entries.length;k++){
+if(s.entries[k].value!=='reset'&&s.entries[k].value!=='missed')len++;
+if(a.type==='cumulative'&&s.entries[k].value>peak)peak=s.entries[k].value;
+}
+var ongoing=s.end===a.streaks[a.streaks.length-1].end&&getStreak(a)>0;
+streaks.push({name:a.name,type:a.type,len:len,end:s.end,peak:peak>0?peak:null,latest:s.entries[s.entries.length-1]?s.entries[s.entries.length-1].value:null,ongoing:ongoing});
+}
+}
+streaks.sort(function(a,b){return new Date(b.end)-new Date(a.end);});
+var list=document.getElementById('hList');
+if(!streaks.length){list.innerHTML='<p class="empty">No streaks yet</p>';return;}
+var html='';
+for(var i=0;i<streaks.length;i++){
+var s=streaks[i];
+html+='<div style="background:#f9fafb;border:2px solid #e5e7eb;border-radius:.5rem;padding:1rem;margin-bottom:.75rem"><div style="display:flex;justify-content:space-between"><div style="flex:1"><h3>'+s.name+'</h3>';
+html+='<p style="font-size:.875rem;color:#6b7280;margin-top:.25rem"><strong>'+s.len+' '+(s.len===1?'day':'days')+'</strong>';
+if(s.type==='cumulative'&&s.peak)html+=', peak = '+s.peak;
+if(s.type==='cumulative'&&s.ongoing&&s.latest)html+=', latest = '+s.latest;
+html+='</p><p style="font-size:.75rem;color:#9ca3af;margin-top:.25rem">';
+html+=s.ongoing?'<span style="color:#059669;font-weight:500">Ongoing</span>':'Ended '+new Date(s.end).toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'});
+html+='</p></div>';
+if(s.ongoing)html+='<span style="background:#d1fae5;color:#065f46;padding:.25rem .5rem;border-radius:.25rem;font-size:.75rem;font-weight:600">Active</span>';
+html+='</div></div>';
+}
+list.innerHTML=html;
+}
+function exportData(){
+var str=JSON.stringify(acts,null,2);
+if(navigator.clipboard&&navigator.clipboard.writeText){
+navigator.clipboard.writeText(str).then(function(){alert('Copied to clipboard!');}).catch(function(){downloadBackup(str);});
+}else{downloadBackup(str);}
+}
+function downloadBackup(str){
+var blob=new Blob([str],{type:'application/json'});
+var url=URL.createObjectURL(blob);
+var link=document.createElement('a');
+link.href=url;
+link.download='streak-backup-'+new Date().toISOString().split('T')[0]+'.json';
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+URL.revokeObjectURL(url);
+}
+init();
+</script>
 </body>
 </html>
